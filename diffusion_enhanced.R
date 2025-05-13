@@ -12,16 +12,16 @@ library(Matrix)
 library(sf)
 library(ggplot2)
 library(RTMB)
-#library(fmesher)
 library(viridisLite)
 library(igraph)
+library(pracma)
 source( file.path(root_dir,"make_sdsem_ram.R") )
 
-ind = \(n,i){ x=rep(0,n); x[i]=1; return(x)}
+make_indicator = \(n,i){ x=rep(0,n); x[i]=1; return(x)}
 
 # Settings
 size = 0.1
-extent = 1
+extent = 1.05
 n_t = 3
 n_missing = 0
 
@@ -35,10 +35,7 @@ extrap = st_sfc(st_polygon(list(extent*cbind(c(-1,1,1,-1,-1),c(-1,-1,1,1,-1)))))
 extrap = st_make_grid( extrap, cellsize=c(size,size) / 10 )
 extrap_locs = st_coordinates(st_centroid(extrap))
 
-#
-mesh_locs = pracma::poisson2disk(n=length(domain)*2, a=extent*2, b=extent*2 )
-mesh = fm_mesh_2d( mesh_locs-extent, refine=TRUE )
-
+# Make plot of simulation
 png( file=file.path(run_dir,"diffusion.png"), width=7, height=6, res=200, units="in" )
   par( mfrow=c(3,4), mar=c(0,0,0,0), mgp=c(2,0.5,0), tck=-0.02, oma=c(0,3,2,0) )
   for(row_index in 1:3){
@@ -94,26 +91,19 @@ png( file=file.path(run_dir,"diffusion.png"), width=7, height=6, res=200, units=
               use_area = use_area )
 
     # Generate indicator
-    logD1 = ind(n_s, which_mid) / mid_area
-    logD_k = c( logD1, rep(0,nrow(ram$P_kk)-n_s) )
-    # Reformat either one
+    D1 = make_indicator(n_s, which_mid) / mid_area
+    D_k = c( D1, rep(0,nrow(ram$P_kk)-n_s) )
+    # Project
     IminusP_kk = ram$IminusP_kk
-    logD_st = matrix( solve(IminusP_kk, logD_k), ncol=n_t )
-    logD_st = as.matrix(A_gs %*% logD_st)
-
-    # Edit data
-    colSums(logD_st)
-    exp(diff(log(colSums(logD_st))))
-    N_st = array( rpois(prod(dim(logD_st)), lambda=100*exp(logD_st)), dim=dim(logD_st) )
-    Z_stc = N_st %o% 1
-    dimnames(Z_stc) = list( seq_len(dim(Z_stc)[1]), seq_len(dim(Z_stc)[2]), c("var") )
+    D_st = matrix( solve(IminusP_kk, D_k), ncol=n_t )
+    D_st = as.matrix(A_gs %*% D_st)
 
     # Calculate diffusion ~propto~ MSD
     Mean_tz = matrix(NA, nrow=n_t, ncol=2)
     MSD_t = rep(NA, n_t)
     for(t in seq_len(n_t) ){
-      Mean_tz[t,] = apply(extrap_locs, MARGIN=2, FUN=weighted.mean, w=logD_st[,t])
-      MSD_t[t] = weighted.mean( rowSums( (extrap_locs-rep(1,nrow(extrap_locs))%o%Mean_tz[t,])^2), w=logD_st[,t] )
+      Mean_tz[t,] = apply(extrap_locs, MARGIN=2, FUN=weighted.mean, w=D_st[,t])
+      MSD_t[t] = weighted.mean( rowSums( (extrap_locs-rep(1,nrow(extrap_locs))%o%Mean_tz[t,])^2), w=D_st[,t] )
     }
     #diff( MSD_t )
 
@@ -145,18 +135,12 @@ png( file=file.path(run_dir,"diffusion.png"), width=7, height=6, res=200, units=
 
     # Plot
     for( col_index in seq_len(n_t) ){
-      plot( st_sf(extrap, logD_st[,col_index]), border=NA,    # [,column_index]
+      plot( st_sf(extrap, D_st[,col_index]), border=NA,    # [,column_index]
             key.pos=NULL, reset=FALSE, pal=pal,
-            breaks=seq(0,max(logD_st[,col_index]),length=101),
+            breaks=seq(0,max(D_st[,col_index]),length=101),
             main = "" )
       if( row_index==1 ) mtext(side=3, line=1.5, text=paste0("time ", col_index) )
       mtext( side=3, line = 0, paste0("MSD = ", round(MSD_t[col_index],3)) )
     }
-    H = ram$Q_kk
-    Title = paste0( "Nonzero=", length(H@x)," Sparsity=", round(length(H@x)/prod(dim(H)),3) )
-    print(Title)
-    H = drop0(H)
-    Title = paste0( "Nonzero=", length(H@x)," Sparsity=", round(length(H@x)/prod(dim(H)),3) )
-    print(Title)
   }
 dev.off()
