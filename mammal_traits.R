@@ -8,7 +8,7 @@ library(sem)
 root_dir = R'(C:\Users\James.Thorson\Desktop\Git\GGMM)'
 data_dir = file.path( root_dir, "data" )
 
-# Compress VertTree for github
+# Extract single tree from VertTree, to save in github
 if( FALSE ){
   local_dir = R'(C:\Users\James.Thorson\Desktop\Work files\AFSC\2025-04 -- Mammal tree)'
   tree = read.nexus( file.path( local_dir, "output.nex" ) )
